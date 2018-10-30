@@ -21,10 +21,11 @@ import numpy as np
 import os
 import gzip, pickle
 import tensorflow as tf
-from scipy.misc import imread
+from scipy.misc import imread, imresize
 from scipy import linalg
 import pathlib
 import urllib
+import tqdm
 
 
 class InvalidFIDException(Exception):
@@ -87,7 +88,9 @@ def get_activations(images, sess, batch_size=50, verbose=False):
     n_batches = d0//batch_size
     n_used_imgs = n_batches*batch_size
     pred_arr = np.empty((n_used_imgs,2048))
-    for i in range(n_batches):
+    loader_bar = tqdm.tqdm(range(n_batches))
+
+    for i in loader_bar:
         if verbose:
             print("\rPropagating batch %d/%d" % (i+1, n_batches), end="", flush=True)
         start = i*batch_size
@@ -95,6 +98,7 @@ def get_activations(images, sess, batch_size=50, verbose=False):
         batch = images[start:end]
         pred = sess.run(inception_layer, {'FID_Inception_Net/ExpandDims:0': batch})
         pred_arr[start:end] = pred.reshape(batch_size,-1)
+    loader_bar.close()
     if verbose:
         print(" done")
     return pred_arr
@@ -275,19 +279,45 @@ def check_or_download_inception(inception_path):
     return str(model_file)
 
 
+
+def _load_all_filenames(fullpath):
+    print(fullpath)
+    images = []
+    for path, subdirs, files in os.walk(fullpath):
+        for name in files:
+            if name.rfind('jpg') != -1 or name.rfind('png') != -1:
+                filename = os.path.join(path, name)
+                # print('filename', filename)
+                # print('path', path, '\nname', name)
+                # print('filename', filename)
+                if os.path.isfile(filename):
+                    images.append(filename)
+    print('images number:', len(images))
+    return images
+
+def _load_all_files(files, imsize=299):
+    images = np.stack([imresize(imread(str(image), mode='RGB'), imsize).astype(np.float32) for image in files])
+    images = images.transpose((0,3,1,2))
+    images /= 255    
+    return images
+
+
 def _handle_path(path, sess, low_profile=False):
     if path.endswith('.npz'):
         f = np.load(path)
         m, s = f['mu'][:], f['sigma'][:]
         f.close()
     else:
-        path = pathlib.Path(path)
-        files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
+        # path = pathlib.Path(path)
+        
+        #files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
+        files = _load_all_filenames(path)
         if low_profile:
             m, s = calculate_activation_statistics_from_files(files, sess)
         else:
-            x = np.array([imread(str(fn)).astype(np.float32) for fn in files])
-            m, s = calculate_activation_statistics(x, sess)
+            x = _load_all_files(files)
+            batch_size = 64
+            m, s = calculate_activation_statistics(x, sess, batch_size=batch_size)
             del x #clean up memory
     return m, s
 
