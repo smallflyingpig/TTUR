@@ -220,15 +220,18 @@ def get_activations_from_files(files, sess, batch_size=50, verbose=False):
     n_batches = d0//batch_size
     n_used_imgs = n_batches*batch_size
     pred_arr = np.empty((n_used_imgs,2048))
-    for i in range(n_batches):
+    loader_bar = tqdm.tqdm(range(n_batches))
+    for i in loader_bar:
         if verbose:
             print("\rPropagating batch %d/%d" % (i+1, n_batches), end="", flush=True)
         start = i*batch_size
         end = start + batch_size
-        batch = load_image_batch(files[start:end])
+        #batch = load_image_batch(files[start:end])
+        batch = _load_all_files(files[start:end], imsize=(args.imsize, args.imsize))
         pred = sess.run(inception_layer, {'FID_Inception_Net/ExpandDims:0': batch})
         pred_arr[start:end] = pred.reshape(batch_size,-1)
         del batch #clean up memory
+    loader_bar.close()
     if verbose:
         print(" done")
     return pred_arr
@@ -295,16 +298,17 @@ def _load_all_filenames(fullpath):
     print('images number:', len(images))
     return images
 
-def _load_all_files(files, imsize=299):
-    images = np.stack([imresize(imread(str(image), mode='RGB'), imsize).astype(np.float32) for image in files])
-    images = images.transpose((0,3,1,2))
-    images /= 255    
+def _load_all_files(files, imsize=(299,299)):
+    # the data should be in (0,255) with shape (batch, height, width, channel)
+    images = np.stack([imresize(imread(str(image), mode='RGB'), imsize, interp='lanczos').astype(np.float32) for image in files])
+    #images = images.transpose((0,3,1,2))
+    #images /= 255    
     return images
 
 
 def _handle_path(path, sess, low_profile=False):
-    if path.endswith('.npz'):
-        f = np.load(path)
+    if path.endswith('.npz') or path.endswith('.np'):
+        f = np.load(path).item()
         m, s = f['mu'][:], f['sigma'][:]
         f.close()
     else:
@@ -313,12 +317,14 @@ def _handle_path(path, sess, low_profile=False):
         #files = list(path.glob('*.jpg')) + list(path.glob('*.png'))
         files = _load_all_filenames(path)
         if low_profile:
-            m, s = calculate_activation_statistics_from_files(files, sess)
+            m, s = calculate_activation_statistics_from_files(files, sess, batch_size=args.batch_size)
         else:
-            x = _load_all_files(files)
-            batch_size = 64
-            m, s = calculate_activation_statistics(x, sess, batch_size=batch_size)
+            x = _load_all_files(files, imsize=args.imsize)
+            m, s = calculate_activation_statistics(x, sess)
             del x #clean up memory
+        #save mu and sigma
+        np.savez_compressed(path, mu=m, sigma=s)
+
     return m, s
 
 
@@ -348,9 +354,14 @@ if __name__ == "__main__":
         help='Path to Inception model (will be downloaded if not provided)')
     parser.add_argument("--gpu", default="", type=str,
         help='GPU to use (leave blank for CPU only)')
+    parser.add_argument("--imsize", default=256, type=int,
+        help='image size, default (256,256)')
+    parser.add_argument("--batch_size", default=64, type=int,
+        help='batch size for evaluation, default 64')
     parser.add_argument("--lowprofile", action="store_true",
         help='Keep only one batch of images in memory at a time. This reduces memory footprint, but may decrease speed slightly.')
     args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
+    print(args)
     fid_value = calculate_fid_given_paths(args.path, args.inception, low_profile=args.lowprofile)
     print("FID: ", fid_value)
