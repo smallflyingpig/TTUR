@@ -269,7 +269,7 @@ def check_or_download_inception(inception_path):
         the file if it is not present. '''
     INCEPTION_URL = 'http://download.tensorflow.org/models/image/imagenet/inception-2015-12-05.tgz'
     if inception_path is None:
-        inception_path = '/tmp'
+        inception_path = './'
     inception_path = pathlib.Path(inception_path)
     model_file = inception_path / 'classify_image_graph_def.pb'
     if not model_file.exists():
@@ -288,7 +288,7 @@ def _load_all_filenames(fullpath):
     images = []
     for path, subdirs, files in os.walk(fullpath):
         for name in files:
-            if name.rfind('jpg') != -1 or name.rfind('png') != -1:
+            if os.path.splitext(name)[-1].lower() in ['.jpg', '.png', '.jpeg']:
                 filename = os.path.join(path, name)
                 # print('filename', filename)
                 # print('path', path, '\nname', name)
@@ -300,6 +300,7 @@ def _load_all_filenames(fullpath):
 
 def _load_all_files(files, imsize=(299,299)):
     # the data should be in (0,255) with shape (batch, height, width, channel)
+    # images = np.stack([imresize(imread(str(image), mode='RGB'), imsize, interp='lanczos').astype(np.float32) for image in files])
     images = np.stack([imresize(imread(str(image), mode='RGB'), imsize, interp='lanczos').astype(np.float32) for image in files])
     #images = images.transpose((0,3,1,2))
     #images /= 255    
@@ -308,9 +309,14 @@ def _load_all_files(files, imsize=(299,299)):
 
 def _handle_path(path, sess, low_profile=False):
     if path.endswith('.npz') or path.endswith('.np'):
-        f = np.load(path).item()
-        m, s = f['mu'][:], f['sigma'][:]
-        f.close()
+        if path.endswith('npz'):
+            f = np.load(path)    
+            m, s = f['mu'][:], f['sigma'][:]
+            f.close()
+        else:
+            f = np.load(path).item()
+            m, s = f['mu'][:], f['sigma'][:]
+            f.close()
     else:
         # path = pathlib.Path(path)
         
@@ -340,7 +346,9 @@ def calculate_fid_given_paths(paths, inception_path, low_profile=False):
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         m1, s1 = _handle_path(paths[0], sess, low_profile=low_profile)
+        np.savez_compressed(paths[0], mu=m1, sigma=s1)
         m2, s2 = _handle_path(paths[1], sess, low_profile=low_profile)
+        #np.savez_compressed(paths[0], mu=m1, sigma=s1)
         fid_value = calculate_frechet_distance(m1, s1, m2, s2)
         return fid_value
 
