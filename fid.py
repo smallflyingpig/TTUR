@@ -367,6 +367,7 @@ def calculate_ipd_given_path(paths, inception_path, low_profile=False):
     files1 = _load_all_filenames(paths[0])
     files2 = _load_all_filenames(paths[1])
     print(paths[0], len(files1), paths[1], len(files2))
+    create_inception_graph(str(inception_path))
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
         ipd = calculate_activate_error_from_files(files1, files2, sess)
