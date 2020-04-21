@@ -255,7 +255,13 @@ def calculate_activation_statistics_from_files(files, sess, batch_size=50, verbo
     mu = np.mean(act, axis=0)
     sigma = np.cov(act, rowvar=False)
     return mu, sigma
-    
+
+def calculate_activate_error_from_files(files1, files2, sess, batch_size=50,
+        verbose=False):
+    act1 = get_activations_from_files(files1, sess, batch_size, verbose)
+    act2 = get_activations_from_files(files2, sess, batch_size, verbose)
+    error = (act1-act2).abs().mean()
+    return error 
 #-------------------------------------------------------------------------------
 
 
@@ -307,6 +313,7 @@ def _load_all_files(files, imsize=(299,299)):
     return images
 
 
+
 def _handle_path(path, sess, low_profile=False):
     if path.endswith('.npz') or path.endswith('.np'):
         if path.endswith('npz'):
@@ -352,6 +359,18 @@ def calculate_fid_given_paths(paths, inception_path, low_profile=False):
         fid_value = calculate_frechet_distance(m1, s1, m2, s2)
         return fid_value
 
+def calculate_ipd_given_path(paths, inception_path, low_profile=False):
+    inception_path = check_or_download_inception(inception_path)
+    for p in paths:
+        if not os.path.exists(p):
+            raise RuntimeError("Invalid path: %s" % p)
+    files1 = _load_all_filenames(paths[0])
+    files2 = _load_all_filenames(paths[1])
+    print(paths[0], len(files1), paths[1], len(files2))
+    with tf.Session() as sess:
+        sess.run(tf.global_variables_initializer())
+        ipd = calculate_activate_error_from_files(files1, files2, sess)
+    return ipd
 
 if __name__ == "__main__":
     from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
@@ -373,3 +392,5 @@ if __name__ == "__main__":
     print(args)
     fid_value = calculate_fid_given_paths(args.path, args.inception, low_profile=args.lowprofile)
     print("FID: ", fid_value)
+    # ipd = calculate_ipd_given_path(args.path, args.inception, low_profile=args.lowprofile)
+    # print("IPD: ", ipd)
