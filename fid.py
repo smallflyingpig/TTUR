@@ -260,7 +260,7 @@ def calculate_activate_error_from_files(files1, files2, sess, batch_size=50,
         verbose=False):
     act1 = get_activations_from_files(files1, sess, batch_size, verbose)
     act2 = get_activations_from_files(files2, sess, batch_size, verbose)
-    error = (act1-act2).abs().mean()
+    error = np.mean(((act1-act2)*(act1-act2)).sum(axis=1))
     return error 
 #-------------------------------------------------------------------------------
 
@@ -367,6 +367,18 @@ def calculate_ipd_given_path(paths, inception_path, low_profile=False):
     files1 = _load_all_filenames(paths[0])
     files2 = _load_all_filenames(paths[1])
     print(paths[0], len(files1), paths[1], len(files2))
+    # check files
+    if  not len(files1)==len(files2):
+        folder1 = os.path.split(files1[0])[0]
+        folder2 = os.path.split(files2[0])[0]
+        ext1 = os.path.splitext(files1[0])[-1]
+        ext2 = os.path.splitext(files2[0])[-1]
+        filename1 = [os.path.split(_f)[-1][:-4] for _f in files1]
+        filename2 = [os.path.split(_f)[-1][:-4] for _f in files2]
+        filenames = [_f for _f in filename1 if _f in filename2]
+        files1 = [os.path.join(folder1, _f+ext1) for _f in filenames]
+        files2 = [os.path.join(folder2, _f+ext2) for _f in filenames]
+    print(paths[0], len(files1), paths[1], len(files2))
     create_inception_graph(str(inception_path))
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -391,7 +403,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     os.environ['CUDA_VISIBLE_DEVICES'] = args.gpu
     print(args)
-    fid_value = calculate_fid_given_paths(args.path, args.inception, low_profile=args.lowprofile)
-    print("FID: ", fid_value)
-    # ipd = calculate_ipd_given_path(args.path, args.inception, low_profile=args.lowprofile)
-    # print("IPD: ", ipd)
+    # fid_value = calculate_fid_given_paths(args.path, args.inception, low_profile=args.lowprofile)
+    # print("FID: ", fid_value)
+    ipd = calculate_ipd_given_path(args.path, args.inception, low_profile=args.lowprofile)
+    print("IPD: ", ipd)
